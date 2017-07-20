@@ -1,108 +1,136 @@
-//--NPM Packages--//
-var inquirer = require("inquirer");
-
-//--Setup NPM SQL Package and Database Connection--//
+// Initializes the npm packages used
 var mysql = require("mysql");
+var inquirer = require("inquirer");
+require("console.table");
+
+// Initializes the connection variable to sync with a MySQL database
 var connection = mysql.createConnection({
   host: "localhost",
   port: 3306,
+
   // Your username
   user: "root",
+
   // Your password
-  password: "test",
-  database: "bamazon_db"
+  password: "",
+  database: "bamazon"
 });
 
-//--Connection Test--//
+// Creates the connection with the server and loads the product data upon a successful connection
 connection.connect(function(err) {
-  if (err) throw err;
-  //console.log("connected as id " + connection.threadId);
+  if (err) {
+    console.error("error connecting: " + err.stack);
+  }
+  loadProducts();
 });
 
-//--Query Test--//
-connection.query("SELECT * FROM products", function(err, res) {
-	if (err) throw err;
-  //console.log(res);
-});
-
-//--Application--//
-
-//--Run Welcome Screen with Available Products--//
-storeLoad();
-
-
-//******Function Libaries********//
-
-//--Query from DB for Product Listing--//
-function selector() {
-  connection.query("SELECT * FROM products", function(err, res) {
-    for (var i = 0; i < res.length; i++) {
-      console.log("Item ID = " + res[i].item_id + " | " + res[i].product_name + " | " + "Department - " 
-        + res[i].department_name + " | " + "Price $ = " + res[i].price);
-    }
-    console.log("-----------------------------------");
-  });
-};
-
-//--Welcome Screen Function--//
-function storeLoad() {
+// Function to load the products table from the database and print results to the console
+function loadProducts() {
+  // Selects all of the data from the MySQL products table
   connection.query("SELECT * FROM products", function(err, res) {
     if (err) throw err;
-    console.log('');
-    console.log("Welcome to Bamazon! Below you can see what we have available for purchase!");
-    console.log('');    
-      selector();
-      setTimeout(bamazonConfirm, 1500);
-    });
-};
 
-//--Place Order Function--//
-function bamazonConfirm() {
-  inquirer.prompt([
-  {
-    type:"confirm",
-    message:"Would you like to place an order?",
-    name:"confirm"
-  
-  }]).then(function(answers){
-    if (answers.confirm) {
-          bamazonBuy();
-    } else {
-          console.log("Thank you for visiting!!");
-          };
+    // Draw the table in the terminal using the response
+    console.table(res);
+
+    // Then prompt the customer for their choice of product, pass all the products to promptCustomerForItem
+    promptCustomerForItem(res);
   });
-};
+}
 
-//-- Buying of Product Function--//
-function bamazonBuy() {
-  inquirer.prompt([
-  {
-      type:"input",
-      message:"What is the product ID you would like to buy? \n",
-      name:"idchoice"
-  },
-  {
-    type:"input",
-      message:"How many would you like to purchase? \n",
-      name:"quantity"
+// Prompt the customer for a product ID
+function promptCustomerForItem(inventory) {
+  // Prompts user for what they would like to purchase
+  inquirer
+    .prompt([
+      {
+        type: "input",
+        name: "choice",
+        message: "What is the ID of the item you would you like to purchase? [Quit with Q]",
+        validate: function(val) {
+          return !isNaN(val) || val.toLowerCase() === "q";
+        }
+      }
+    ])
+    .then(function(val) {
+      // Check if the user wants to quit the program
+      checkIfShouldExit(val.choice);
+      var choiceId = parseInt(val.choice);
+      var product = checkInventory(choiceId, inventory);
+
+      // If there is a product with the id the user chose, prompt the customer for a desired quantity
+      if (product) {
+        // Pass the chosen product to promptCustomerForQuantity
+        promptCustomerForQuantity(product);
+      }
+      else {
+        // Otherwise let them know the item is not in the inventory, re-run loadProducts
+        console.log("\nThat item is not in the inventory.");
+        loadProducts();
+      }
+    });
+}
+
+// Prompt the customer for a product quantity
+function promptCustomerForQuantity(product) {
+  inquirer
+    .prompt([
+      {
+        type: "input",
+        name: "quantity",
+        message: "How many would you like? [Quit with Q]",
+        validate: function(val) {
+          return val > 0 || val.toLowerCase() === "q";
+        }
+      }
+    ])
+    .then(function(val) {
+      // Check if the user wants to quit the program
+      checkIfShouldExit(val.quantity);
+      var quantity = parseInt(val.quantity);
+
+      // If there isn't enough of the chosen product and quantity, let the user know and re-run loadProducts
+      if (quantity > product.stock_quantity) {
+        console.log("\nInsufficient quantity!");
+        loadProducts();
+      }
+      else {
+        // Otherwise run makePurchase, give it the product information and desired quantity to purchase
+        makePurchase(product, quantity);
+      }
+    });
+}
+
+// Purchase the desired quanity of the desired item
+function makePurchase(product, quantity) {
+  connection.query(
+    "UPDATE products SET stock_quantity = stock_quantity - ? WHERE item_id = ?",
+    [quantity, product.item_id],
+    function(err, res) {
+      // Let the user know the purchase was successful, re-run loadProducts
+      console.log("\nSuccessfully purchased " + quantity + " " + product.product_name + "'s!");
+      loadProducts();
+    }
+  );
+}
+
+// Check to see if the product the user chose exists in the inventory
+function checkInventory(choiceId, inventory) {
+  for (var i = 0; i < inventory.length; i++) {
+    if (inventory[i].item_id === choiceId) {
+      // If a matching product is found, return the product
+      return inventory[i];
+    }
   }
-      ]).then(function(answers){
-        var queryItem = "SELECT * FROM products WHERE item_id = ?";
-          connection.query(queryItem, [answers.idchoice], function(err, res) {
-            if (err) throw err;
-            //console.log(res[0].stock_quantity);
-              if (parseFloat(answers.quantity) <= parseFloat(res[0].stock_quantity)) {
-                console.log("Congrats, We have Stock on Hand for your order!");
-              } 
-              else {
-                console.log("Insufficient quantity!");
-              }
-          });
-      });
-};
+  // Otherwise return null
+  return null;
+}
 
-//--Stock Quantity Update Query Function--//
-// function queryUpdateStock() {
-//   var queryStock = "UPDATE bamazon SET ? WHERE item_id = ?";
-//   connection.query(queryStock, [answers.] function(err, res) {
-// }
+// Check to see if the user wants to quit the program
+function checkIfShouldExit(choice) {
+  if (choice.toLowerCase() === "q") {
+    // Log a message and exit the current node process
+    console.log("Goodbye!");
+    process.exit(0);
+  }
+}
