@@ -107,3 +107,5 @@ VALUES ("Video Games", 200),
   ("Necessities", 300),
   ("Films", 35),
   ("Board Games", 0);
+
+  
